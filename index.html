@@ -7,10 +7,10 @@
 <title>BTC Quant Engine</title>
 <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Doto:wght@900&family=Silkscreen&family=JetBrains+Mono:wght@400;600;800&family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=JetBrains+Mono:wght@400;600;800&family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 /* ===== BTC Quant Engine — "Insomaniac" poster style =====
-   กระดาษเทาอ่อน + เกรน · หมึกดำ · Acid lime · ตัวหนา Archivo Black · ข้อมูลเป็น Mono ตัวเล็ก · แถบ Dot-matrix ด้านล่าง
+   กระดาษเทาอ่อน + เกรน · หมึกดำ · Acid lime · ตัวหนา Archivo Black · ข้อมูลเป็น Mono ตัวเล็ก
    แผงมี 3 แบบ: ปกติ (กระดาษ) · .ink (ดำ) · .mfd (lime) — แต่ละแบบตั้งตัวแปรสีของตัวเอง
    (ดีไซน์เดิมแบบ Cockpit เก็บไว้ที่ style.cockpit.css / index.cockpit.html) */
 :root {
@@ -21,8 +21,6 @@
   --field: #f7f7f4; --field-ink: #0d0d0d;
   --display: "Archivo Black", "IBM Plex Sans Thai", "Arial Black", sans-serif;
   --mono: "JetBrains Mono", "IBM Plex Sans Thai", Consolas, monospace;
-  --dot: "Doto", "Silkscreen", "JetBrains Mono", monospace;
-  --barcode: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 3px, currentColor 3px 4px, transparent 4px 7px, currentColor 7px 10px, transparent 10px 11px, currentColor 11px 12px, transparent 12px 15px, currentColor 15px 16px, transparent 16px 18px);
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -42,24 +40,12 @@ a { color: var(--acc); }
 header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 28px; padding: 22px 20px 16px; border-bottom: 3px solid var(--ink); align-items: end; }
 .mast { min-width: 0; }
 .brand { font-family: var(--display); font-size: clamp(38px, 7.4vw, 104px); line-height: .86; letter-spacing: -.02em; text-transform: uppercase; margin: 0; overflow-wrap: anywhere; }
-.micro { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 0 14px; margin-top: 12px; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; line-height: 1.5; color: var(--ink); }
-.micro span { display: flex; justify-content: space-between; gap: 6px; border-top: 1px solid var(--ink); padding-top: 2px; }
-.dots { display: flex; gap: 6px; margin-top: 10px; }
-.dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); }
-.dots i.l { background: var(--lime); box-shadow: 0 0 0 1px var(--ink); }
-.dots i.o { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink); }
 
-.hud { display: grid; grid-template-columns: auto auto auto; gap: 10px 14px; align-items: center; justify-items: end; min-width: 0; }
+.hud { display: grid; grid-template-columns: auto; gap: 10px 14px; align-items: center; justify-items: end; min-width: 0; }
 .hud .quote { grid-column: 1 / -1; text-align: right; }
 .hud .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
 .price { font-family: var(--display); font-size: clamp(30px, 3.6vw, 48px); line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 .sub { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: .05em; line-height: 1.6; text-transform: uppercase; }
-.barcode { color: var(--ink); width: 150px; height: 46px; background: var(--barcode); }
-.code { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.xbox { width: 46px; height: 46px; border: 1.5px solid var(--ink); background:
-  linear-gradient(to top right, transparent calc(50% - .75px), var(--ink) calc(50% - .75px) calc(50% + .75px), transparent calc(50% + .75px)),
-  linear-gradient(to top left, transparent calc(50% - .75px), var(--ink) calc(50% - .75px) calc(50% + .75px), transparent calc(50% + .75px)); }
-.reg { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--ink); background: conic-gradient(var(--ink) 0 25%, transparent 0 50%, var(--ink) 0 75%, transparent 0); flex: none; }
 .status { font-size: 10px; color: var(--ink); display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: .1em; border: 1px solid var(--ink); padding: 5px 9px; background: var(--field); }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sell); flex: none; }
 .dot.on { background: var(--lime); box-shadow: 0 0 0 1.5px var(--ink); }
@@ -74,8 +60,6 @@ header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 28
 .pages a { padding: 7px 14px; color: #ececE8; text-decoration: none; border: 1px solid #ececE8; margin-right: -1px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; background: transparent; }
 .pages a:hover { background: #ececE8; color: var(--ink); }
 .pages a.active { background: var(--lime); border-color: var(--lime); color: var(--ink); font-weight: 800; }
-.pages .tagline { margin-left: auto; font-size: 10px; letter-spacing: .2em; color: #ececE8; display: flex; align-items: center; gap: 10px; padding-right: 6px; }
-.pages .tagline::before { content: ""; width: 70px; height: 14px; color: #ececE8; background: var(--barcode); }
 
 /* ---------- ปุ่ม / ฟอร์ม ---------- */
 .tfs { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 10px; }
@@ -205,30 +189,21 @@ tbody tr:hover td { background: rgba(198,226,28,.28); }
 details summary.note { list-style: none; }
 pre.note { background: var(--field); border: 1px solid var(--rule); padding: 8px; max-height: 300px; overflow: auto; }
 
-/* ---------- Footer + แถบ Dot-matrix ---------- */
+/* ---------- Footer ---------- */
 footer { margin: 8px 0 0; padding: 16px 20px 14px; font-size: 10.5px; color: #9a9a95; line-height: 1.7; background: var(--ink); border-bottom: 1px solid #34342f; }
 footer b { color: var(--lime); }
-.banner { display: flex; align-items: center; justify-content: space-between; gap: 10px 18px; flex-wrap: wrap; background: var(--ink); color: #f0f0ec; padding: 14px 20px 16px;
-  font-family: var(--dot); font-weight: 900; font-size: clamp(22px, 4.4vw, 62px); line-height: 1; letter-spacing: .02em; text-transform: uppercase; }
-.banner .dots { margin: 0; gap: clamp(8px, 1.2vw, 16px); }
-.banner .dots i { width: clamp(14px, 2.2vw, 30px); height: clamp(14px, 2.2vw, 30px); background: #f0f0ec; }
-.banner .dots i.l { background: var(--lime); box-shadow: none; }
-.banner .dots i.o { background: transparent; box-shadow: inset 0 0 0 2px #f0f0ec; }
 
 @media (max-width: 760px) {
   header { grid-template-columns: minmax(0, 1fr); }
-  .hud { justify-items: start; grid-template-columns: auto auto 1fr; }
+  .hud { justify-items: start; grid-template-columns: minmax(0, 1fr); }
   .hud .quote { text-align: left; }
   .hud .meta { justify-content: flex-start; }
-  .code { align-items: flex-start; }
 }
 @media (max-width: 600px) {
   header, main, .wide { padding-left: 16px; padding-right: 16px; }
   .pages { margin-left: 16px; margin-right: 16px; }
   footer { padding-left: 16px; padding-right: 16px; }
-  .pages .tagline { display: none; }
   .mtfgrid { grid-template-columns: repeat(2, 1fr); }
-  .banner { padding: 12px 16px; }
 }
 
 /* ===== Eye-care soft dark (2026-11-18) =====
@@ -249,16 +224,7 @@ a { color: var(--acc); }
 
 /* Light lines on dark */
 header { border-bottom-color: var(--rule); }
-.micro { color: var(--muted); }
-.micro span { border-top-color: var(--line); }
-.dots i { background: var(--rule); }
-.dots i.l, .dot.on { box-shadow: none; }
-.dots i.o { box-shadow: inset 0 0 0 1.5px var(--rule); }
-.barcode { color: var(--rule); }
-.xbox { border-color: var(--rule); background:
-  linear-gradient(to top right, transparent calc(50% - .75px), var(--rule) calc(50% - .75px) calc(50% + .75px), transparent calc(50% + .75px)),
-  linear-gradient(to top left, transparent calc(50% - .75px), var(--rule) calc(50% - .75px) calc(50% + .75px), transparent calc(50% + .75px)); }
-.reg { border-color: var(--rule); background: conic-gradient(var(--rule) 0 25%, transparent 0 50%, var(--rule) 0 75%, transparent 0); }
+.dot.on { box-shadow: none; }
 .status, .langs button { color: var(--text); border-color: var(--rule); }
 .sig, .warnbox, .kind.SIM, .kind.PROXY, .kind.MODEL, .st.PASS, .st.UNKNOWN, .tag.buy, .tag.sell { border-color: var(--rule); }
 input[type=checkbox] { accent-color: var(--lime); }
@@ -267,7 +233,6 @@ input[type=checkbox] { accent-color: var(--lime); }
 .pages { background: var(--ink); border: 1px solid var(--line); }
 .pages a { color: var(--soft); border-color: var(--rule); }
 .pages a:hover { background: var(--line); color: var(--text); }
-.pages .tagline, .pages .tagline::before { color: var(--muted); }
 
 /* Panels */
 .panel.ink { --panel: #1a1d22; --text: #d3d0c7; --muted: #8b9099; --line: #343a42; --rule: #4f5661; --acc: #a3b86c;
@@ -282,9 +247,6 @@ input[type=checkbox] { accent-color: var(--lime); }
 .sig.wait { background: repeating-linear-gradient(-45deg, rgba(163,184,108,.28) 0 7px, var(--panel) 7px 14px); color: var(--text); }
 tbody tr:hover td { background: rgba(163,184,108,.10); }
 footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px solid var(--line); }
-.banner { color: var(--soft); border-top: 1px solid var(--line); }
-.banner .dots i { background: var(--soft); }
-.banner .dots i.o { box-shadow: inset 0 0 0 2px var(--soft); }
 
 /* Section A: entry and exit points */
 .kotb-wrap { margin-top: 12px; padding-top: 10px; border-top: 1.5px solid var(--rule); }
@@ -299,21 +261,12 @@ footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px 
 <header>
   <div class="mast">
     <h1 class="brand">BTC/USDT<br>Quant Engine</h1>
-    <div class="micro">
-      <span>Binance<b>spot</b></span><span>BTCUSDT<b>1/1</b></span><span>M5 · M15<b>H1 · H4</b></span><span>EMA<b>20/50/200</b></span>
-      <span>RSI<b>14</b></span><span>ATR<b>14</b></span><span>Rules<b>11/11</b></span><span>SMC lab<b>I/09</b></span>
-      <span>Paper<b>sim</b></span><span>No AI<b>det.</b></span><span>Ver<b>1.0.0</b></span><span>Risk<b>R-based</b></span>
-    </div>
-    <div class="dots"><i></i><i></i><i></i></div>
   </div>
   <div class="hud">
     <div class="quote">
       <div class="price" id="price">—</div>
       <div class="sub" id="src">—</div>
     </div>
-    <div class="reg" aria-hidden="true"></div>
-    <div class="xbox" aria-hidden="true"></div>
-    <div class="code"><div class="barcode" aria-hidden="true"></div><div class="sub">BTC-QE · 1.0.0</div></div>
     <div class="meta">
       <div class="sub" id="day">—</div>
       <div class="status"><span class="dot" id="dot"></span><span id="conn" data-i18n="conn">กำลังเชื่อมต่อ…</span></div>
@@ -323,7 +276,6 @@ footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px 
 </header>
 <nav class="pages">
   <a href="#secA" class="active" data-i18n="navDash">Dashboard</a><a href="#secF" data-i18n="navBt">Backtest</a><a href="#secI" data-i18n="navSmc">SMC Lab</a><a href="#secH" data-i18n="navCfg">ตั้งค่า</a>
-  <span class="tagline">DETERMINISTIC · 11 RULES · NO AI</span>
 </nav>
 
 <main>
@@ -412,8 +364,6 @@ footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px 
 <footer>
   <div data-i18n-html="footer"></div>
 </footer>
-<div class="banner" aria-hidden="true"><span>BTC Quant <span id="bnYear">2026</span></span><span class="dots"><i></i><i class="l"></i><i class="o"></i></span><span id="bnMonth">November</span></div>
-<script>(() => { const d = new Date(); document.getElementById('bnYear').textContent = d.getFullYear(); document.getElementById('bnMonth').textContent = d.toLocaleString('en-US', { month: 'long' }); })();</script>
 
 <script>
 (() => {
