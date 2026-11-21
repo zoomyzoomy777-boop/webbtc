@@ -285,6 +285,14 @@ footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px 
 .banner { color: var(--soft); border-top: 1px solid var(--line); }
 .banner .dots i { background: var(--soft); }
 .banner .dots i.o { box-shadow: inset 0 0 0 2px var(--soft); }
+
+/* Section A: entry and exit points */
+.kotb-wrap { margin-top: 12px; padding-top: 10px; border-top: 1.5px solid var(--rule); }
+.kotb-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.kotb-head small { color: var(--muted); font-size: 10px; font-weight: 400; letter-spacing: .04em; text-transform: none; }
+#kotbChart { height: 260px; position: relative; margin-bottom: 8px; }
+#kotb table { font-size: 11px; }
+#kotb th, #kotb td { padding: 4px 5px; }
 </style>
 <script>try { document.documentElement.lang = localStorage.getItem('lang') || 'th'; } catch (e) {}</script>
 </head>
@@ -342,6 +350,11 @@ footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px 
     <div class="panel ink" id="secA">
       <h3 data-i18n="hMarket">A · ภาพรวมตลาด</h3>
       <div id="market"></div>
+      <div class="kotb-wrap">
+        <div class="kotb-head" id="kotbHead"></div>
+        <div id="kotbChart"></div>
+        <div id="kotb"></div>
+      </div>
     </div>
     <div class="panel mfd" id="secB">
       <h3 data-i18n="hMtf">B · Multi-Timeframe</h3>
@@ -667,6 +680,92 @@ function snapshotAt(set, k) {
   return {
     T, set,
     idx: { M5: k, M15: lastClosedIndex(set.M15.candles, TF_MS.M15, T), H1: lastClosedIndex(set.H1.candles, TF_MS.H1, T), H4: lastClosedIndex(set.H4.candles, TF_MS.H4, T) },
+  };
+}
+
+// ===== engine/kotb.js =====
+// ---------- จุดเข้า-ออก KOTB (M15) — ตรรกะเดียวกับ pine/btc-signal-levels.pine ----------
+// สัญญาณกลับตัว 2 แท่ง + กรองเทรนด์ Supertrend และ EMA200 · SL = 3×ATR14 · TP = 1R / 2R / 3R แบ่งออก 3 ส่วน
+// ใช้เฉพาะแท่งที่ปิดแล้ว · แท่งเดียวชนทั้ง SL และ TP นับเป็น SL · แยกจาก 11 กฎและไม่ส่งคำสั่ง Paper
+
+const KOTB_DEFAULTS = {
+  swingLen: 20, recentN: 6, minBodyPct: 0.5, minBodyAtr: 0.3, minPairAtr: 0.6,
+  stFactor: 3, stLen: 10, slAtr: 3, tpR: [1, 2, 3], minSl: 25, cost: 8.75,
+};
+
+// ทิศ Supertrend: 1 = ขาขึ้น, -1 = ขาลง, null = ข้อมูลยังไม่พอ
+function kotbSupertrend(c, factor, len) {
+  const a = atr(c, len), out = new Array(c.length).fill(null);
+  let up = null, dn = null, dir = -1;
+  for (let i = 0; i < c.length; i++) {
+    if (a[i] == null) continue;
+    const mid = (c[i].h + c[i].l) / 2;
+    let u = mid - factor * a[i], d = mid + factor * a[i];
+    if (up != null) {
+      u = c[i - 1].c > up ? Math.max(u, up) : u;
+      d = c[i - 1].c < dn ? Math.min(d, dn) : d;
+      if (dir === 1 && c[i].c < up) dir = -1;
+      else if (dir === -1 && c[i].c > dn) dir = 1;
+    }
+    up = u; dn = d; out[i] = dir;
+  }
+  return out;
+}
+
+function runKotb(c, opts = {}) {
+  const P = { ...KOTB_DEFAULTS, ...opts }, a = atr(c, 14), st = kotbSupertrend(c, P.stFactor, P.stLen), e200 = ema(c.map(x => x.c), 200);
+  const trades = [];
+  const hi = (i, k) => { let v = -Infinity; for (let j = Math.max(0, i - k + 1); j <= i; j++) v = Math.max(v, c[j].h); return v; };
+  const lo = (i, k) => { let v = Infinity; for (let j = Math.max(0, i - k + 1); j <= i; j++) v = Math.min(v, c[j].l); return v; };
+  const body = i => Math.abs(c[i].c - c[i].o);
+  const clear = i => a[i] != null && body(i) >= P.minBodyPct * (c[i].h - c[i].l) && body(i) >= P.minBodyAtr * a[i];
+  let prevBuy = false, prevSell = false, cur = null;
+
+  const finish = (i, px, result) => {
+    let pnl = -P.cost;
+    for (let k = 0; k < 3; k++) pnl += (k < cur.hits ? cur.dir * (cur.tp[k] - cur.entry) : cur.dir * (px - cur.entry)) / 3;
+    Object.assign(cur, { open: false, exitBar: c[i].t, exitTime: c[i].t + (c[i].t - c[i - 1].t), exitPrice: px, result, pnl, r: pnl / cur.risk });
+    cur = null;
+  };
+
+  for (let i = 1; i < c.length; i++) {
+    let sig = 0;
+    if (a[i] != null) {
+      const up = c[i].c > c[i].o && c[i - 1].c > c[i - 1].o && c[i].c > c[i - 1].c;
+      const down = c[i].c < c[i].o && c[i - 1].c < c[i - 1].o && c[i].c < c[i - 1].c;
+      const pair = (clear(i) || clear(i - 1)) && body(i) + body(i - 1) >= P.minPairAtr * a[i];
+      const buy = up && pair && lo(i, P.recentN) <= lo(i, P.swingLen);
+      const sell = down && pair && hi(i, P.recentN) >= hi(i, P.swingLen);
+      const risk = a[i] * P.slAtr;
+      if (e200[i] != null && st[i] != null && risk >= P.minSl) {
+        if (buy && !prevBuy && st[i] === 1 && c[i].c > e200[i]) sig = 1;
+        else if (sell && !prevSell && st[i] === -1 && c[i].c < e200[i]) sig = -1;
+      }
+      prevBuy = buy; prevSell = sell;
+    }
+    if (cur) {
+      const x = c[i], d = cur.dir;
+      if (d > 0 ? x.l <= cur.sl : x.h >= cur.sl) finish(i, cur.sl, cur.hits ? `SL หลัง TP${cur.hits}` : 'SL');
+      else {
+        while (cur.hits < 3 && (d > 0 ? x.h >= cur.tp[cur.hits] : x.l <= cur.tp[cur.hits])) cur.hits++;
+        if (cur.hits === 3) finish(i, cur.tp[2], 'TP3');
+        else if (sig === -d) finish(i, x.c, 'กลับทิศ');
+      }
+    }
+    if (!cur && sig) {
+      const entry = c[i].c, risk = a[i] * P.slAtr;
+      cur = {
+        dir: sig, side: sig > 0 ? 'BUY' : 'SELL', bar: c[i].t, entryTime: c[i].t + (c[i].t - c[i - 1].t), entry, risk,
+        sl: entry - sig * risk, tp: P.tpR.map(m => entry + sig * risk * m), hits: 0, open: true,
+        exitBar: null, exitTime: null, exitPrice: null, result: null, pnl: null, r: null,
+      };
+      trades.push(cur);
+    }
+  }
+  const done = trades.filter(t => !t.open);
+  return {
+    trades, current: cur, last: trades[trades.length - 1] || null,
+    stats: { n: done.length, wins: done.filter(t => t.pnl > 0).length, sl: done.filter(t => t.result === 'SL').length, netR: done.reduce((s, t) => s + t.r, 0) },
   };
 }
 
@@ -1989,8 +2088,68 @@ function renderMarket() {
   $('price').className = 'price ' + (chg == null ? '' : chg >= 0 ? 'up' : 'down');
   $('src').innerHTML = q ? `Ask ${f2(q.ask)} · spread ${fN(q.spread, 2)} · <span class="kind ${fs.kind}">${fs.kind}</span>` : 'DATA NOT AVAILABLE';
   $('day').innerHTML = `Session: <b style="color:var(--text)">${ses.label}</b><br>BTCUSDT · Binance spot`;
+  renderKotb();
 }
 const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+// ---------- A: จุดเข้า-ออก KOTB บน M15 (แยกจาก 11 กฎ · ไม่ส่งคำสั่ง Paper) ----------
+const KOTB_BARS = 160;
+const kChart = LightweightCharts.createChart($('kotbChart'), { ...chartOpt, timeScale: { ...chartOpt.timeScale, rightOffset: 4 } });
+const kCs = kChart.addCandlestickSeries({ upColor: '#9fc483', downColor: '#de8073', borderVisible: false, wickUpColor: '#9fc483', wickDownColor: '#de8073' });
+let kotbR = null, kotbKey = null, kLines = [], kFitted = false;
+const kotbResult = s => s === 'กลับทิศ' ? tr('กลับทิศ', 'Reversed') : s?.startsWith('SL หลัง') ? tr(s, s.replace('SL หลัง ', 'SL after ')) : s;
+
+function updateKotb() {
+  if (!set?.M5.candles.length) return;
+  const all = set.M15.candles, T = set.M5.candles[set.M5.candles.length - 1].t + TF_MS.M5, n = lastClosedIndex(all, TF_MS.M15, T);
+  if (n < 0 || all[n].t === kotbKey) return;
+  const closed = all.slice(0, n + 1), view = closed.slice(-KOTB_BARS), first = view[0].t;
+  kotbKey = all[n].t; kotbR = runKotb(closed);
+  kCs.setData(view.map(x => ({ time: ts(x.t), open: x.o, high: x.h, low: x.l, close: x.c })));
+  const mk = [];
+  for (const t of kotbR.trades) {
+    const buy = t.dir > 0;
+    if (t.bar >= first) mk.push({ time: ts(t.bar), position: buy ? 'belowBar' : 'aboveBar', color: buy ? '#9fc483' : '#de8073', shape: buy ? 'arrowUp' : 'arrowDown', text: t.side });
+    if (t.exitBar != null && t.exitBar >= first) mk.push({ time: ts(t.exitBar), position: buy ? 'aboveBar' : 'belowBar', color: t.pnl >= 0 ? '#9fc483' : '#de8073', shape: 'circle', text: kotbResult(t.result) });
+  }
+  kCs.setMarkers(mk.sort((a, b) => a.time - b.time));
+  kLines.forEach(l => kCs.removePriceLine(l)); kLines = [];
+  const p = kotbR.current;
+  if (p) {
+    const add = (price, color, title) => kLines.push(kCs.createPriceLine({ price, color, title, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true }));
+    add(p.entry, '#cfccc3', 'Entry'); add(p.sl, '#de8073', 'SL');
+    p.tp.forEach((x, i) => add(x, '#9fc483', `TP${i + 1}`));
+  }
+  if (!kFitted) { kChart.timeScale().fitContent(); kFitted = true; }
+}
+
+function renderKotb() {
+  updateKotb();
+  $('kotbHead').innerHTML = `<span>${tr('จุดเข้า-ออก', 'Entry / Exit')} · M15</span><small>${tr('อัปเดตเมื่อแท่ง M15 ปิด', 'updates on M15 close')}</small>`;
+  if (!kotbR) { $('kotb').innerHTML = `<div class="note">${tr('รอข้อมูล…', 'Waiting for data…')}</div>`; return; }
+  if (forming && kotbKey != null) {
+    const t = Math.floor(forming.t / TF_MS.M15) * TF_MS.M15;
+    if (t > kotbKey) {
+      const part = set.M15.candles[set.M15.candles.length - 1], has = part?.t === t;
+      kCs.update({ time: ts(t), open: has ? part.o : forming.o, high: has ? Math.max(part.h, forming.h) : forming.h, low: has ? Math.min(part.l, forming.l) : forming.l, close: forming.c });
+    }
+  }
+  const x = kotbR.current || kotbR.last, q = quote();
+  if (!x) { $('kotb').innerHTML = `<div class="note">${tr('ยังไม่มีสัญญาณในข้อมูล 60 วัน', 'No signal in the 60-day history')}</div>`; return; }
+  const chk = i => x.hits > i ? ' ✓' : '', S = kotbR.stats;
+  const status = x.open ? (x.hits ? tr(`ถึง TP${x.hits} แล้ว · กำลังวิ่ง`, `TP${x.hits} hit · running`) : tr('เปิดอยู่ · รอ TP1', 'Open · waiting for TP1')) : `${tr('ปิดแล้ว', 'Closed')} · ${kotbResult(x.result)} · ${x.r >= 0 ? '+' : ''}${fN(x.r, 2)}R`;
+  const now = x.open && q ? x.dir * ((x.dir > 0 ? q.bid : q.ask) - x.entry) : null;
+  let h = row(x.open ? tr('สัญญาณปัจจุบัน', 'Current signal') : tr('สัญญาณล่าสุด', 'Last signal'), `<span class="tag ${x.dir > 0 ? 'buy' : 'sell'}">${x.side}</span><span class="lbl">${fTime(x.entryTime)}</span>`) +
+    row(tr('จุดเข้า', 'Entry'), `<b class="en">${f2(x.entry)}</b>`) +
+    row('Stop Loss', `<b class="sl">${f2(x.sl)}</b><span class="lbl">${tr('ระยะ', 'distance')} $${f2(x.risk)}</span>`) +
+    x.tp.map((p, i) => row(`TP${i + 1}`, `<b class="tp">${f2(p)}${chk(i)}</b>`)).join('') +
+    row(tr('สถานะ', 'Status'), `${status}${now == null ? '' : `<span class="lbl">${tr('ตอนนี้', 'now')} <span class="${now >= 0 ? 'up' : 'down'}">${now >= 0 ? '+' : ''}${f2(now)}</span></span>`}`);
+  const recent = kotbR.trades.filter(t => !t.open).slice(-8).reverse();
+  h += `<div class="note"><b>${tr('ไม้ล่าสุด', 'Recent trades')}</b> · ${tr('60 วัน', '60 days')}: ${S.n} ${tr('ไม้', 'trades')} · ${tr('ชนะ', 'win')} ${S.n ? (S.wins / S.n * 100).toFixed(0) : 0}% · ${S.netR >= 0 ? '+' : ''}${fN(S.netR, 1)}R</div>
+    <div class="scroll"><table><thead><tr><th>${tr('เข้า', 'Entry')}</th><th>Side</th><th>${tr('ราคาเข้า', 'In')}</th><th>${tr('ราคาออก', 'Out')}</th><th>${tr('ผล', 'Result')}</th><th>R</th></tr></thead><tbody>${recent.map(t => `<tr><td>${new Date(t.entryTime).toLocaleString(tr('th-TH', 'en-GB', 'ja-JP'), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td><td><span class="tag ${t.dir > 0 ? 'buy' : 'sell'}">${t.side}</span></td><td>${f2(t.entry)}</td><td>${f2(t.exitPrice)}</td><td>${kotbResult(t.result)}</td><td class="${t.r >= 0 ? 'up' : 'down'}">${t.r >= 0 ? '+' : ''}${fN(t.r, 2)}</td></tr>`).join('') || `<tr><td colspan="6">—</td></tr>`}</tbody></table></div>
+    <div class="note">${tr('ระบบ KOTB แยกจาก 11 กฎในแผง C และไม่เปิดไม้ Paper ให้อัตโนมัติ · R หักสเปรด $8.75 แล้ว · ไม่ใช่คำแนะนำการลงทุน', 'KOTB is separate from the 11 rules in panel C and opens no paper trades · R is after $8.75 spread · Not investment advice')}</div>`;
+  $('kotb').innerHTML = h;
+}
 
 // ---------- B: Multi-Timeframe ----------
 function renderMtf() {
