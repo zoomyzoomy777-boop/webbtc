@@ -290,7 +290,6 @@ footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px 
 .kotb-wrap { margin-top: 12px; padding-top: 10px; border-top: 1.5px solid var(--rule); }
 .kotb-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .kotb-head small { color: var(--muted); font-size: 10px; font-weight: 400; letter-spacing: .04em; text-transform: none; }
-#kotbChart { height: 260px; position: relative; margin-bottom: 8px; }
 #kotb table { font-size: 11px; }
 #kotb th, #kotb td { padding: 4px 5px; }
 </style>
@@ -332,6 +331,7 @@ footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px 
     <div class="panel ink" id="secE">
       <h3 data-i18n="hChart">E · กราฟราคา</h3>
       <div class="ctl"><div class="tfs" id="tfs" style="margin:0"></div>
+        <label><input type="checkbox" id="showKotb" checked> <span data-i18n="showKotb">แสดงจุดเข้า-ออก</span></label>
         <label><input type="checkbox" id="showBt"> <span data-i18n="showBt">แสดงเทรด Backtest</span></label>
         <label><input type="checkbox" id="showPaper" checked> <span data-i18n="showPaper">แสดงเทรด Paper</span></label></div>
       <div id="chart"></div>
@@ -352,7 +352,6 @@ footer { color: var(--muted); border-bottom-color: var(--line); border-top: 1px 
       <div id="market"></div>
       <div class="kotb-wrap">
         <div class="kotb-head" id="kotbHead"></div>
-        <div id="kotbChart"></div>
         <div id="kotb"></div>
       </div>
     </div>
@@ -1824,6 +1823,7 @@ const I18N = {
   hRisk: ['G · ควบคุมความเสี่ยง / Paper', 'G · Risk Control / Paper Trading', 'G · リスク管理 / ペーパー'],
   hBt: ['F · Backtest', 'F · Backtest', 'F · バックテスト'],
   hCfg: ['H · ตั้งค่ากลยุทธ์', 'H · Strategy Settings', 'H · 戦略設定'],
+  showKotb: ['แสดงจุดเข้า-ออก', 'Show entry/exit points', 'エントリー/決済を表示'],
   showBt: ['แสดงเทรด Backtest', 'Show backtest trades', 'バックテスト取引を表示'],
   showPaper: ['แสดงเทรด Paper', 'Show paper trades', 'ペーパー取引を表示'],
   btPeriod: ['ช่วงเวลา', 'Period', '期間'],
@@ -2013,7 +2013,7 @@ const lineOpt = { lineWidth: 1, priceLineVisible: false, lastValueVisible: false
 const sE20 = chart.addLineSeries({ ...lineOpt, color: '#cfccc3' });
 const sE50 = chart.addLineSeries({ ...lineOpt, color: '#8e8e89' });
 const sE200 = chart.addLineSeries({ ...lineOpt, color: '#9fc483', lineWidth: 2 });
-let priceLines = [], levels = [];
+let priceLines = [], levels = [], fitView = true;
 cs.applyOptions({ autoscaleInfoProvider: orig => { const r = orig(); if (r?.priceRange && levels.length) { r.priceRange.minValue = Math.min(r.priceRange.minValue, ...levels); r.priceRange.maxValue = Math.max(r.priceRange.maxValue, ...levels); } return r; } });
 const ts = t => t / 1000 + LOCAL_TZ;
 const snap = (t, tf) => ts(Math.floor(t / TF_MS[tf]) * TF_MS[tf]);
@@ -2030,12 +2030,14 @@ function viewCandles() {
 
 function drawChart() {
   if (!set) return;
+  updateKotb();
   const c = viewCandles(), s = set[viewTf];
   if (fullDraw) {
     cs.setData(c.map(x => ({ time: ts(x.t), open: x.o, high: x.h, low: x.l, close: x.c })));
     const line = arr => s.candles.map((x, i) => arr[i] == null ? null : { time: ts(x.t), value: arr[i] }).filter(Boolean);
     sE20.setData(line(s.e20)); sE50.setData(line(s.e50)); sE200.setData(line(s.e200));
     fullDraw = false;
+    if (fitView && c.length) { chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, c.length - 200), to: c.length + 6 }); fitView = false; }
   } else if (c.length) {
     const x = c[c.length - 1];
     cs.update({ time: ts(x.t), open: x.o, high: x.h, low: x.l, close: x.c });
@@ -2045,11 +2047,16 @@ function drawChart() {
   const { Dashed, SparseDotted, Dotted } = LightweightCharts.LineStyle;
   const p = exec.state.open;
   if (p) { add(p.fill, '#cfccc3', `${p.side} entry`, Dashed); add(p.sl, '#de8073', 'SL', Dashed); add(p.tp, '#9fc483', 'TP', Dashed); }
-  else if (ev?.stopLoss != null) {
+  else if (ev?.stopLoss != null && !(ev.signal === 'NO_TRADE' && $('showKotb').checked)) { // ซ่อนแผน "(if)" เพื่อไม่ให้ปนกับจุดเข้า-ออกจริง
     const sfx = ev.signal === 'NO_TRADE' ? ' (if)' : '';
     add(ev.entryPrice, '#cfccc3', `${ev.direction > 0 ? 'BUY' : 'SELL'} entry${sfx}`, SparseDotted);
     add(ev.stopLoss, '#de8073', 'SL' + sfx, SparseDotted); add(ev.takeProfit, '#9fc483', 'TP' + sfx, SparseDotted);
     if (ev.swing) add(ev.swing.price, '#8e8e89', 'H1 swing', Dotted);
+  }
+  const showKotb = $('showKotb').checked, kp = showKotb ? kotbR?.current : null;
+  if (kp) {
+    add(kp.entry, '#cfccc3', `KOTB ${kp.side}`, Dashed); add(kp.sl, '#de8073', 'KOTB SL', Dashed);
+    kp.tp.forEach((x, i) => add(x, '#9fc483', `KOTB TP${i + 1}`, Dashed));
   }
   const first = c[0]?.t ?? 0, mk = [];
   const push = (t, dir, kind, txt, exitT, res, pnl) => {
@@ -2060,6 +2067,11 @@ function drawChart() {
   };
   if ($('showPaper').checked) for (const t of [...exec.state.closed, ...(p ? [p] : [])]) push(t.entryTime, t.dir, 'P ', t.side, t.exitTime, t.result, t.pnl);
   if ($('showBt').checked && btResult) for (const t of btResult.trades) push(t.entryTime, t.dir, 'BT ', '', t.exitTime, t.result, t.pnl);
+  if (showKotb && kotbR) for (const t of kotbR.trades) {
+    const buy = t.dir > 0;
+    if (t.entryTime - 1 >= first) mk.push({ time: snap(t.entryTime - 1, viewTf), position: buy ? 'belowBar' : 'aboveBar', color: buy ? '#9fc483' : '#de8073', shape: buy ? 'arrowUp' : 'arrowDown', text: t.side });
+    if (t.exitTime != null && t.exitTime - 1 >= first) mk.push({ time: snap(t.exitTime - 1, viewTf), position: buy ? 'aboveBar' : 'belowBar', color: t.pnl >= 0 ? '#9fc483' : '#de8073', shape: 'circle', text: kotbResult(t.result) });
+  }
   mk.sort((a, b) => a.time - b.time);
   cs.setMarkers(mk);
   $('chartNote').textContent = tr(`EMA จากแท่งที่ปิดแล้ว · เวลาเครื่อง (UTC${LOCAL_TZ >= 0 ? '+' : ''}${LOCAL_TZ / 3600})`, `EMAs from closed candles · local time (UTC${LOCAL_TZ >= 0 ? '+' : ''}${LOCAL_TZ / 3600})`);
@@ -2093,47 +2105,20 @@ function renderMarket() {
 const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 // ---------- A: จุดเข้า-ออก KOTB บน M15 (แยกจาก 11 กฎ · ไม่ส่งคำสั่ง Paper) ----------
-const KOTB_BARS = 160;
-const kChart = LightweightCharts.createChart($('kotbChart'), { ...chartOpt, timeScale: { ...chartOpt.timeScale, rightOffset: 4 } });
-const kCs = kChart.addCandlestickSeries({ upColor: '#9fc483', downColor: '#de8073', borderVisible: false, wickUpColor: '#9fc483', wickDownColor: '#de8073' });
-let kotbR = null, kotbKey = null, kLines = [], kFitted = false;
+let kotbR = null, kotbKey = null;
 const kotbResult = s => s === 'กลับทิศ' ? tr('กลับทิศ', 'Reversed') : s?.startsWith('SL หลัง') ? tr(s, s.replace('SL หลัง ', 'SL after ')) : s;
 
 function updateKotb() {
   if (!set?.M5.candles.length) return;
   const all = set.M15.candles, T = set.M5.candles[set.M5.candles.length - 1].t + TF_MS.M5, n = lastClosedIndex(all, TF_MS.M15, T);
   if (n < 0 || all[n].t === kotbKey) return;
-  const closed = all.slice(0, n + 1), view = closed.slice(-KOTB_BARS), first = view[0].t;
-  kotbKey = all[n].t; kotbR = runKotb(closed);
-  kCs.setData(view.map(x => ({ time: ts(x.t), open: x.o, high: x.h, low: x.l, close: x.c })));
-  const mk = [];
-  for (const t of kotbR.trades) {
-    const buy = t.dir > 0;
-    if (t.bar >= first) mk.push({ time: ts(t.bar), position: buy ? 'belowBar' : 'aboveBar', color: buy ? '#9fc483' : '#de8073', shape: buy ? 'arrowUp' : 'arrowDown', text: t.side });
-    if (t.exitBar != null && t.exitBar >= first) mk.push({ time: ts(t.exitBar), position: buy ? 'aboveBar' : 'belowBar', color: t.pnl >= 0 ? '#9fc483' : '#de8073', shape: 'circle', text: kotbResult(t.result) });
-  }
-  kCs.setMarkers(mk.sort((a, b) => a.time - b.time));
-  kLines.forEach(l => kCs.removePriceLine(l)); kLines = [];
-  const p = kotbR.current;
-  if (p) {
-    const add = (price, color, title) => kLines.push(kCs.createPriceLine({ price, color, title, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true }));
-    add(p.entry, '#cfccc3', 'Entry'); add(p.sl, '#de8073', 'SL');
-    p.tp.forEach((x, i) => add(x, '#9fc483', `TP${i + 1}`));
-  }
-  if (!kFitted) { kChart.timeScale().fitContent(); kFitted = true; }
+  kotbKey = all[n].t; kotbR = runKotb(all.slice(0, n + 1)); dirty = true;
 }
 
 function renderKotb() {
   updateKotb();
-  $('kotbHead').innerHTML = `<span>${tr('จุดเข้า-ออก', 'Entry / Exit')} · M15</span><small>${tr('อัปเดตเมื่อแท่ง M15 ปิด', 'updates on M15 close')}</small>`;
+  $('kotbHead').innerHTML = `<span>${tr('จุดเข้า-ออก', 'Entry / Exit')} · M15</span><small>${tr('แสดงบนกราฟหลัก (E) · อัปเดตเมื่อแท่ง M15 ปิด', 'shown on main chart (E) · updates on M15 close')}</small>`;
   if (!kotbR) { $('kotb').innerHTML = `<div class="note">${tr('รอข้อมูล…', 'Waiting for data…')}</div>`; return; }
-  if (forming && kotbKey != null) {
-    const t = Math.floor(forming.t / TF_MS.M15) * TF_MS.M15;
-    if (t > kotbKey) {
-      const part = set.M15.candles[set.M15.candles.length - 1], has = part?.t === t;
-      kCs.update({ time: ts(t), open: has ? part.o : forming.o, high: has ? Math.max(part.h, forming.h) : forming.h, low: has ? Math.min(part.l, forming.l) : forming.l, close: forming.c });
-    }
-  }
   const x = kotbR.current || kotbR.last, q = quote();
   if (!x) { $('kotb').innerHTML = `<div class="note">${tr('ยังไม่มีสัญญาณในข้อมูล 60 วัน', 'No signal in the 60-day history')}</div>`; return; }
   const chk = i => x.hits > i ? ' ✓' : '', S = kotbR.stats;
@@ -2505,9 +2490,9 @@ $('tfs').addEventListener('click', e => {
   const t = e.target.dataset.tf; if (!t || t === viewTf) return;
   viewTf = t; store.set('bqe.viewTf', t);
   document.querySelectorAll('#tfs button').forEach(b => b.classList.toggle('active', b.dataset.tf === t));
-  fullDraw = true; render(); chart.timeScale().scrollToRealTime();
+  fullDraw = true; fitView = true; render();
 });
-for (const id of ['showBt', 'showPaper']) $(id).addEventListener('change', () => { dirty = true; });
+for (const id of ['showKotb', 'showBt', 'showPaper']) $(id).addEventListener('change', () => { dirty = true; });
 document.querySelector('.pages').addEventListener('click', e => {
   const a = e.target.closest('a'); if (!a) return;
   document.querySelectorAll('.pages a').forEach(x => x.classList.toggle('active', x === a));
